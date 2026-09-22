@@ -930,7 +930,9 @@ async function launchOnPumpFun() {
     formData.append('website', website);
     formData.append('showName', 'true');
 
-    const ipfsRes = await fetch('https://pump.fun/api/ipfs', { method: 'POST', body: formData });
+    // Calling our own /api/pump-ipfs (same-origin, no CORS issue) instead of
+    // pump.fun's endpoint directly — see api/pump-ipfs.js for why.
+    const ipfsRes = await fetch('/api/pump-ipfs', { method: 'POST', body: formData });
     if (!ipfsRes.ok) throw new Error('pump.fun rejected the metadata upload (status ' + ipfsRes.status + '). This endpoint is undocumented and reverse-engineered — it may have changed.');
     const ipfsData = await ipfsRes.json();
     const metadataUri = ipfsData.metadataUri || ipfsData.uri;
