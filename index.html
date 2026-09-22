@@ -55,7 +55,8 @@
   .coin-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;}
   .coin-card .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
   .coin-row{display:flex;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:12px;}
-  .coin-avatar{width:52px;height:52px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Archivo Black',sans-serif;font-size:17px;color:#04130A;}
+  .coin-avatar{width:52px;height:52px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Archivo Black',sans-serif;font-size:17px;color:#04130A;overflow:hidden;}
+  .coin-avatar img{width:100%;height:100%;object-fit:cover;}
   .coin-body{flex:1;min-width:0;}
   .coin-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
   .coin-title{display:flex;align-items:baseline;gap:8px;min-width:0;}
@@ -95,16 +96,30 @@
   <button class="tab-btn" data-tab="docs">Docs</button>
 </nav>
 
+<div id="globalToast" class="status" style="display:none;position:fixed;left:24px;right:24px;bottom:24px;max-width:480px;margin:0 auto;z-index:50;box-shadow:0 10px 30px rgba(0,0,0,0.5);"></div>
+
 <div class="wrap">
 
   <!-- EXPLORE -->
   <div id="tab-explore" class="tab-panel active">
     <div style="padding:36px 0 20px 0;">
       <div class="mono" style="font-size:12px;color:var(--green);margin-bottom:8px;">EXPLORE</div>
-      <h1 class="display" style="font-size:28px;margin:0 0 10px 0;">Coins launched from this browser</h1>
-      <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0;">This list is stored on this device, not a global feed — a real explore page needs an indexer watching the chain, noted in Docs. Every entry here is a real on-chain launch you can verify independently in Token Lab.</p>
+      <h1 class="display" style="font-size:28px;margin:0 0 10px 0;">Explore</h1>
     </div>
-    <div id="exploreList"></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h2 class="display" style="font-size:18px;margin:0;">Trending on Solana</h2>
+      <button id="refreshTrendingBtn" class="btn-outline" style="padding:8px 14px;font-size:13px;">Refresh</button>
+    </div>
+    <p style="font-size:13px;color:var(--faint);margin:0 0 16px 0;">Real, live market data pulled from CoinGecko for established Solana tokens — not launched through STONK GEN, shown for context on what "big" looks like.</p>
+    <div id="trendingStatus" class="status status-idle">Loading trending Solana tokens…</div>
+    <div id="trendingList" style="margin-bottom:36px;"></div>
+
+    <div style="border-top:1px solid var(--border);padding-top:28px;">
+      <h2 class="display" style="font-size:18px;margin:0 0 6px 0;">Coins launched from this browser</h2>
+      <p style="font-size:13px;line-height:1.6;color:var(--faint);margin:0 0 16px 0;">This list is stored on this device, not a global feed — a real explore page needs an indexer watching the chain, noted in Docs. Every entry here is a real on-chain launch you can verify independently in Token Lab.</p>
+      <div id="exploreList"></div>
+    </div>
   </div>
 
   <!-- LAUNCH -->
@@ -265,18 +280,54 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'explore' && window.renderExplore) window.renderExplore();
+    if (btn.dataset.tab === 'explore' && window.renderExplore) { window.renderExplore(); if (window.loadTrending) window.loadTrending(false); }
     if (btn.dataset.tab === 'creators' && window.renderCreators) window.renderCreators();
   });
 });
 function goToTab(name) {
   document.querySelector('.tab-btn[data-tab="' + name + '"]').click();
 }
+let toastTimer = null;
+function showToast(msg, type) {
+  const el = document.getElementById('globalToast');
+  el.textContent = msg;
+  el.className = 'status status-' + (type || 'idle');
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+window.addEventListener('error', (e) => {
+  console.error('Uncaught error:', e.error || e.message);
+  showToast('Something went wrong: ' + (e.error ? e.error.message : e.message), 'error');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled promise rejection:', e.reason);
+  showToast('Something went wrong: ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'error');
+});
 
 const STORAGE_KEY = 'stonkgen_launches_v1';
 let connection = null;
 let walletPubkey = null;
 let librariesReady = false;
+
+// ---------- mobile + Phantom in-app browser handling ----------
+function isMobileDevice() {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+function isPhantomInAppBrowser() {
+  return !!(window.solana && window.solana.isPhantom);
+}
+function openInPhantomApp() {
+  const dappUrl = encodeURIComponent(window.location.href);
+  const ref = encodeURIComponent(window.location.origin);
+  window.location.href = 'https://phantom.app/ul/browse/' + dappUrl + '?ref=' + ref;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (isMobileDevice() && !isPhantomInAppBrowser()) {
+    const connectBtnEl = document.getElementById('connectBtn');
+    if (connectBtnEl) connectBtnEl.textContent = 'Open in Phantom';
+  }
+});
 
 // ---------- Solana libraries: guarded, so a failed CDN load degrades gracefully ----------
 let Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl;
@@ -302,7 +353,7 @@ try {
 } catch (err) {
   console.error('Solana libraries failed to load:', err);
   document.addEventListener('DOMContentLoaded', () => {
-    ['connectBtn', 'launchBtn', 'verifyBtn'].forEach(id => {
+    ['launchBtn', 'verifyBtn'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = true;
     });
@@ -375,6 +426,58 @@ function renderExplore() {
   }
   list.innerHTML = all.map(l => coinCardHTML(l, all)).join('');
 }
+
+// ---------- trending: real external market data, CoinGecko's public keyless API ----------
+function formatMarketCap(n) {
+  if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+  return '$' + n.toFixed(2);
+}
+function trendingCardHTML(coin) {
+  const change = coin.price_change_percentage_24h;
+  const changeColor = change >= 0 ? 'var(--green)' : 'var(--red)';
+  const changeText = (change >= 0 ? '+' : '') + (change != null ? change.toFixed(1) : '0.0') + '%';
+  return '<a href="https://www.coingecko.com/en/coins/' + coin.id + '" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">' +
+  '<div class="coin-row">' +
+    '<div class="coin-avatar"><img src="' + coin.image + '" alt="' + coin.symbol + '" loading="lazy"></div>' +
+    '<div class="coin-body">' +
+      '<div class="coin-head">' +
+        '<div class="coin-title"><span class="n">' + coin.name + '</span><span class="t">$' + coin.symbol.toUpperCase() + '</span></div>' +
+        '<span class="badge" style="background:var(--panel2);border:1px solid var(--border);color:' + changeColor + ';">' + changeText + '</span>' +
+      '</div>' +
+      '<div class="coin-stats">' +
+        '<div class="coin-stat">Market cap<b>' + formatMarketCap(coin.market_cap) + '</b></div>' +
+        '<div class="coin-stat">Price<b>$' + coin.current_price + '</b></div>' +
+        '<div class="coin-stat">24h volume<b>' + formatMarketCap(coin.total_volume) + '</b></div>' +
+      '</div>' +
+    '</div>' +
+  '</div></a>';
+}
+let trendingLoaded = false;
+async function loadTrending(force) {
+  if (trendingLoaded && !force) return;
+  const status = document.getElementById('trendingStatus');
+  const list = document.getElementById('trendingList');
+  status.style.display = 'block';
+  status.className = 'status status-idle';
+  status.textContent = 'Loading trending Solana tokens…';
+  try {
+    const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=solana-ecosystem&order=market_cap_desc&per_page=8&page=1&price_change_percentage=24h');
+    if (!res.ok) throw new Error('CoinGecko returned ' + res.status);
+    const coins = await res.json();
+    if (!Array.isArray(coins) || !coins.length) throw new Error('No data returned');
+    list.innerHTML = coins.map(trendingCardHTML).join('');
+    status.style.display = 'none';
+    trendingLoaded = true;
+  } catch (err) {
+    console.error('Trending fetch failed:', err);
+    status.className = 'status status-error';
+    status.textContent = 'Could not load trending tokens (CoinGecko may be rate-limiting or unreachable). Tap Refresh to try again.';
+    list.innerHTML = '';
+  }
+}
+document.getElementById('refreshTrendingBtn').addEventListener('click', () => loadTrending(true));
 function renderCreators() {
   const list = document.getElementById('creatorList');
   const statsBox = document.getElementById('creatorStats');
@@ -421,9 +524,19 @@ networkSelect.addEventListener('change', () => {
   renderCreators();
 });
 async function connectWallet() {
-  if (!librariesReady) { setStatus('Solana libraries failed to load — reload the page with a working internet connection first.', 'error'); return; }
+  if (!librariesReady) {
+    showToast('Solana libraries failed to load — reload the page with a working internet connection first.', 'error');
+    setStatus('Solana libraries failed to load — reload the page with a working internet connection first.', 'error');
+    return;
+  }
+  if (isMobileDevice() && !isPhantomInAppBrowser()) {
+    showToast('Opening Phantom…', 'idle');
+    openInPhantomApp();
+    return;
+  }
   const provider = window.solana;
   if (!provider || !provider.isPhantom) {
+    showToast('Phantom wallet not found. Install it from phantom.app, then reload this page.', 'error');
     setStatus('Phantom wallet not found. Install it from phantom.app, then reload this page.', 'error');
     window.open('https://phantom.app/', '_blank');
     return;
@@ -434,9 +547,11 @@ async function connectWallet() {
     connectBtn.textContent = walletPubkey.toBase58().slice(0, 4) + '…' + walletPubkey.toBase58().slice(-4);
     updateLaunchButton();
     setStatus('Wallet connected. Fill in the form and hit Launch Token when ready.', 'idle');
+    showToast('Wallet connected: ' + connectBtn.textContent, 'info');
     renderCreators();
   } catch (err) {
     setStatus('Wallet connection was rejected or failed: ' + (err.message || err), 'error');
+    showToast('Wallet connection was rejected or failed: ' + (err.message || err), 'error');
   }
 }
 connectBtn.addEventListener('click', connectWallet);
@@ -459,7 +574,17 @@ async function launchToken() {
     setStatus('Decimals must be between 0 and 9.', 'error');
     return;
   }
-  const supplyWhole = BigInt(supplyInput);
+  if (!/^[0-9]+$/.test(supplyInput)) {
+    setStatus('Supply must be a whole number — no commas, decimals, or letters.', 'error');
+    return;
+  }
+  let supplyWhole;
+  try {
+    supplyWhole = BigInt(supplyInput);
+  } catch (err) {
+    setStatus('That supply number is not valid.', 'error');
+    return;
+  }
   if (supplyWhole <= 0n) {
     setStatus('Supply must be a positive number.', 'error');
     return;
@@ -511,7 +636,7 @@ async function launchToken() {
       createSetAuthorityInstruction(mintKeypair.publicKey, walletPubkey, AuthorityType.FreezeAccount, null)
     );
 
-    const { blockhash } = await connection.getLatestBlockhash();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = walletPubkey;
     tx.partialSign(mintKeypair);
@@ -521,7 +646,12 @@ async function launchToken() {
 
     launchBtn.textContent = 'Confirming…';
     setStatus('Transaction sent. Waiting for confirmation — this can take a few seconds.', 'idle');
-    await connection.confirmTransaction(signature, 'confirmed');
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight }, 'confirmed'
+    );
+    if (confirmation.value.err) {
+      throw new Error('Transaction was confirmed but failed on-chain: ' + JSON.stringify(confirmation.value.err));
+    }
 
     const net = networkSelect.value;
     const cluster = net === 'mainnet-beta' ? '' : ('?cluster=' + net);
@@ -641,6 +771,7 @@ document.getElementById('narrativeBtn').addEventListener('click', () => {
 
 // initial render
 renderExplore();
+loadTrending(false);
 </script>
 </body>
 </html>
