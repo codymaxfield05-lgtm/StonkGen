@@ -124,10 +124,18 @@
   <!-- LAUNCH -->
   <div id="tab-launch" class="tab-panel">
     <div style="padding:36px 0 20px 0;">
-      <div class="mono" style="font-size:12px;color:var(--green);margin-bottom:8px;">LAUNCH — TERMS LOCKED, NOT PROMISED</div>
+      <div class="mono" style="font-size:12px;color:var(--green);margin-bottom:8px;">LAUNCH</div>
       <h1 class="display" style="font-size:28px;margin:0 0 10px 0;">Launch a coin on Solana.</h1>
-      <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0;">Mint and freeze authority are always revoked, and your launch terms are written on-chain as a permanent memo, in the same transaction as the mint. Nothing about a launch can be edited afterward.</p>
     </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:24px;">
+      <button id="launchModeStonk" class="btn-primary" style="flex:1;">STONK GEN — Locked Launch</button>
+      <button id="launchModePump" class="btn-outline" style="flex:1;">Launch on Pump.fun</button>
+    </div>
+
+    <!-- STONK GEN NATIVE LAUNCH -->
+    <div id="stonkLaunchPanel">
+    <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 20px 0;">Mint and freeze authority are always revoked, and your launch terms are written on-chain as a permanent memo, in the same transaction as the mint. Nothing about a launch can be edited afterward.</p>
 
     <div id="mainnetWarning" class="status status-error" style="display:none;margin-bottom:18px;">
       You're on <strong>Mainnet</strong>. This spends real SOL and creates a real, permanent token. Double-check every field before you sign.
@@ -188,6 +196,73 @@
     <p style="font-size:12px;line-height:1.7;color:var(--faint);margin-top:36px;">
       This creates a real SPL token (classic Token Program). It doesn't yet attach display metadata (name/symbol in wallets/explorers) or route lineage fee-sharing — both noted in Docs as the next build. Meme coins are highly volatile and can lose most or all of their value. Nothing here is financial advice.
     </p>
+    </div>
+
+    <!-- PUMP.FUN LAUNCH -->
+    <div id="pumpLaunchPanel" style="display:none;">
+    <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 16px 0;">Creates a real token directly on pump.fun's bonding curve, via PumpPortal's non-custodial transaction API — built here, signed in your own wallet, never held by anyone else. This is a different platform's launch mechanics, not STONK GEN's Locked Launch.</p>
+
+    <div class="status status-error" style="margin-bottom:18px;">
+      <strong>Mainnet only — real SOL, no free testing.</strong> Pump.fun's program doesn't exist on Devnet, so every attempt here, including your first, uses real funds. Test the STONK GEN native flow on Devnet first to make sure your wallet and this app work together before ever using this panel.
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label for="pfName">Token name</label>
+        <input id="pfName" type="text" placeholder="Stonk Gen" maxlength="32">
+      </div>
+      <div class="field">
+        <label for="pfSymbol">Ticker</label>
+        <input id="pfSymbol" type="text" placeholder="SGEN" maxlength="10">
+      </div>
+      <div class="field">
+        <label for="pfDescription">Description</label>
+        <input id="pfDescription" type="text" placeholder="What is this coin?" maxlength="200">
+      </div>
+      <div class="field">
+        <label for="pfImage">Token image</label>
+        <input id="pfImage" type="file" accept="image/*">
+        <div class="hint">Required by pump.fun — this becomes the token's logo everywhere it's shown.</div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="pfTwitter">X / Twitter — optional</label>
+          <input id="pfTwitter" type="text" placeholder="https://x.com/...">
+        </div>
+        <div class="field">
+          <label for="pfTelegram">Telegram — optional</label>
+          <input id="pfTelegram" type="text" placeholder="https://t.me/...">
+        </div>
+      </div>
+      <div class="field">
+        <label for="pfWebsite">Website — optional</label>
+        <input id="pfWebsite" type="text" placeholder="https://...">
+      </div>
+      <div class="field">
+        <label for="pfInitialBuy">Initial buy — SOL, optional</label>
+        <input id="pfInitialBuy" type="number" value="0" min="0" step="0.01">
+        <div class="hint">Buys your own token as part of the launch transaction. Leave at 0 to launch with no dev buy.</div>
+      </div>
+
+      <button id="pumpLaunchBtn" class="btn-primary" style="width:100%;" disabled>Connect wallet to launch</button>
+      <div id="pumpStatusBox" class="status status-idle">Fill in the form and connect your wallet. Nothing is signed until you approve it in Phantom.</div>
+    </div>
+
+    <div id="pumpReceiptCard" class="card" style="margin-top:20px;display:none;">
+      <div class="mono" style="font-size:12px;color:var(--green);margin-bottom:14px;">PUMP.FUN LAUNCH RECEIPT</div>
+      <div class="kv"><span>Token</span><span id="pfrName"></span></div>
+      <div class="kv"><span>Mint address</span><span id="pfrMint"></span></div>
+      <div class="kv"><span>Transaction</span><span id="pfrTx"></span></div>
+      <div style="margin-top:14px;display:flex;gap:16px;">
+        <a id="pfrPump" href="#" target="_blank" rel="noopener">View on pump.fun →</a>
+        <a id="pfrExplorer" href="#" target="_blank" rel="noopener">View on Solana Explorer →</a>
+      </div>
+    </div>
+
+    <p style="font-size:12px;line-height:1.7;color:var(--faint);margin-top:36px;">
+      This uses PumpPortal, an unofficial third-party API for pump.fun — not something STONK GEN or Anthropic controls or guarantees. It hasn't been tested against a live transaction in the environment this app was built in; the underlying request format is publicly documented but could change without notice on pump.fun's or PumpPortal's end. Start with the smallest possible amount.
+    </p>
+    </div>
   </div>
 
   <!-- CREATORS -->
@@ -427,9 +502,9 @@ function loadSolanaLibraries() {
     ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
     MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
     librariesReady = true;
-    ['launchBtn', 'verifyBtn'].forEach(id => {
+    ['launchBtn', 'verifyBtn', 'pumpLaunchBtn'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.disabled = (id === 'launchBtn' && !walletPubkey);
+      if (el) el.disabled = ((id === 'launchBtn' || id === 'pumpLaunchBtn') && !walletPubkey);
     });
     const status = document.getElementById('statusBox');
     if (status && status.classList.contains('status-error')) setStatus('Fill in the form and connect your wallet. Nothing is signed until you approve it in Phantom.', 'idle');
@@ -445,7 +520,7 @@ function loadSolanaLibraries() {
   }
 }
 function handleLibraryLoadFailure() {
-  ['launchBtn', 'verifyBtn'].forEach(id => {
+  ['launchBtn', 'verifyBtn', 'pumpLaunchBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
   });
@@ -650,6 +725,7 @@ async function connectWallet() {
     walletPubkey = resp.publicKey;
     connectBtn.textContent = walletPubkey.toBase58().slice(0, 4) + '…' + walletPubkey.toBase58().slice(-4);
     updateLaunchButton();
+    if (typeof updatePumpLaunchButton === 'function') updatePumpLaunchButton();
     setStatus('Wallet connected. Fill in the form and hit Launch Token when ready.', 'idle');
     showToast('Wallet connected: ' + connectBtn.textContent, 'info');
     renderCreators();
@@ -794,6 +870,127 @@ async function launchToken() {
   }
 }
 launchBtn.addEventListener('click', launchToken);
+
+// ---------- launch mode toggle: STONK GEN native vs pump.fun ----------
+const launchModeStonk = document.getElementById('launchModeStonk');
+const launchModePump = document.getElementById('launchModePump');
+const stonkLaunchPanel = document.getElementById('stonkLaunchPanel');
+const pumpLaunchPanel = document.getElementById('pumpLaunchPanel');
+launchModeStonk.addEventListener('click', () => {
+  launchModeStonk.className = 'btn-primary'; launchModePump.className = 'btn-outline';
+  stonkLaunchPanel.style.display = 'block'; pumpLaunchPanel.style.display = 'none';
+});
+launchModePump.addEventListener('click', () => {
+  launchModePump.className = 'btn-primary'; launchModeStonk.className = 'btn-outline';
+  pumpLaunchPanel.style.display = 'block'; stonkLaunchPanel.style.display = 'none';
+});
+
+// ---------- pump.fun launch, via PumpPortal's non-custodial local-transaction API ----------
+const pumpLaunchBtn = document.getElementById('pumpLaunchBtn');
+const pumpStatusBox = document.getElementById('pumpStatusBox');
+function setPumpStatus(msg, type) {
+  pumpStatusBox.textContent = msg;
+  pumpStatusBox.className = 'status status-' + (type || 'idle');
+}
+function updatePumpLaunchButton() {
+  pumpLaunchBtn.disabled = !walletPubkey || !librariesReady;
+  pumpLaunchBtn.textContent = walletPubkey ? 'Launch on Pump.fun' : 'Connect wallet to launch';
+}
+
+async function launchOnPumpFun() {
+  if (!librariesReady) { setPumpStatus('Solana libraries failed to load — reload the page first.', 'error'); return; }
+  if (!walletPubkey) { setPumpStatus('Connect your wallet first.', 'error'); return; }
+
+  const name = document.getElementById('pfName').value.trim();
+  const symbol = document.getElementById('pfSymbol').value.trim();
+  const description = document.getElementById('pfDescription').value.trim();
+  const imageFile = document.getElementById('pfImage').files[0];
+  const twitter = document.getElementById('pfTwitter').value.trim();
+  const telegram = document.getElementById('pfTelegram').value.trim();
+  const website = document.getElementById('pfWebsite').value.trim();
+  const initialBuyInput = document.getElementById('pfInitialBuy').value.trim() || '0';
+
+  if (!name || !symbol) { setPumpStatus('Fill in at least a name and ticker.', 'error'); return; }
+  if (!imageFile) { setPumpStatus('Pump.fun requires a token image.', 'error'); return; }
+  const initialBuy = Number(initialBuyInput);
+  if (isNaN(initialBuy) || initialBuy < 0) { setPumpStatus('Initial buy must be zero or a positive number.', 'error'); return; }
+
+  pumpLaunchBtn.disabled = true;
+  pumpLaunchBtn.textContent = 'Uploading metadata…';
+  setPumpStatus('Uploading your token image and metadata to pump.fun.', 'idle');
+
+  try {
+    const formData = new FormData();
+    formData.append('file', imageFile);
+    formData.append('name', name);
+    formData.append('symbol', symbol);
+    formData.append('description', description);
+    formData.append('twitter', twitter);
+    formData.append('telegram', telegram);
+    formData.append('website', website);
+    formData.append('showName', 'true');
+
+    const ipfsRes = await fetch('https://pump.fun/api/ipfs', { method: 'POST', body: formData });
+    if (!ipfsRes.ok) throw new Error('pump.fun rejected the metadata upload (status ' + ipfsRes.status + '). This endpoint is undocumented and reverse-engineered — it may have changed.');
+    const ipfsData = await ipfsRes.json();
+    const metadataUri = ipfsData.metadataUri || ipfsData.uri;
+    if (!metadataUri) throw new Error('pump.fun did not return a metadata URI. Its response format may have changed.');
+
+    pumpLaunchBtn.textContent = 'Building transaction…';
+    setPumpStatus('Metadata uploaded. Building the launch transaction via PumpPortal.', 'idle');
+
+    const mintKeypair = Keypair.generate();
+    const tradeRes = await fetch('https://pumpportal.fun/api/trade-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicKey: walletPubkey.toBase58(),
+        action: 'create',
+        tokenMetadata: { name, symbol, uri: metadataUri },
+        mint: mintKeypair.publicKey.toBase58(),
+        denominatedInSol: 'true',
+        amount: initialBuy,
+        slippage: 10,
+        priorityFee: 0.0005,
+        pool: 'pump',
+      }),
+    });
+    if (!tradeRes.ok) {
+      const errText = await tradeRes.text();
+      throw new Error('PumpPortal rejected the request (status ' + tradeRes.status + '): ' + errText.slice(0, 200));
+    }
+    const txBytes = new Uint8Array(await tradeRes.arrayBuffer());
+    const tx = solanaWeb3.VersionedTransaction.deserialize(txBytes);
+    tx.sign([mintKeypair]);
+
+    pumpLaunchBtn.textContent = 'Approve in Phantom…';
+    setPumpStatus('Transaction built. Approve it in Phantom to launch on pump.fun.', 'idle');
+    const provider = window.solana;
+    const { signature } = await provider.signAndSendTransaction(tx);
+
+    pumpLaunchBtn.textContent = 'Confirming…';
+    setPumpStatus('Transaction sent. Waiting for confirmation.', 'idle');
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+    if (confirmation.value.err) throw new Error('Confirmed but failed on-chain: ' + JSON.stringify(confirmation.value.err));
+
+    document.getElementById('pfrName').textContent = name + ' (' + symbol + ')';
+    document.getElementById('pfrMint').textContent = mintKeypair.publicKey.toBase58();
+    document.getElementById('pfrTx').textContent = signature.slice(0, 8) + '…' + signature.slice(-8);
+    document.getElementById('pfrPump').href = 'https://pump.fun/coin/' + mintKeypair.publicKey.toBase58();
+    document.getElementById('pfrExplorer').href = 'https://explorer.solana.com/tx/' + signature;
+    document.getElementById('pumpReceiptCard').style.display = 'block';
+    setPumpStatus('Launched on pump.fun.', 'info');
+    showToast('Launched on pump.fun: ' + name, 'info');
+  } catch (err) {
+    console.error(err);
+    setPumpStatus('Launch failed: ' + (err.message || err), 'error');
+  } finally {
+    pumpLaunchBtn.disabled = false;
+    pumpLaunchBtn.textContent = 'Launch on Pump.fun';
+  }
+}
+pumpLaunchBtn.addEventListener('click', launchOnPumpFun);
 
 // ---------- token lab: verify ----------
 const B58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
