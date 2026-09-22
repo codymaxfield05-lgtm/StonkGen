@@ -328,23 +328,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ---------- Solana libraries: guarded, so a failed CDN load degrades gracefully ----------
+// ---------- Solana libraries: guarded, retryable, so a failed CDN load degrades gracefully ----------
 let Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl;
 let TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
     createInitializeMintInstruction, getAssociatedTokenAddressSync,
     createAssociatedTokenAccountInstruction, createMintToInstruction,
     createSetAuthorityInstruction, AuthorityType, MEMO_PROGRAM_ID;
+let libraryLoadAttempts = 0;
 
-try {
-  if (typeof solanaWeb3 === 'undefined') {
-    throw new Error('web3.js did not load from the CDN.');
-  }
-  ({ Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl } = solanaWeb3);
-  connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+async function loadSolanaLibraries() {
+  libraryLoadAttempts++;
+  try {
+    if (typeof solanaWeb3 === 'undefined') {
+      throw new Error('web3.js did not load from the CDN.');
+    }
+    ({ Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl } = solanaWeb3);
+    connection = new Connection(clusterApiUrl(networkSelectEl.value), 'confirmed');
 
-  // @solana/spl-token only ships CJS/ESM builds, no browser <script> bundle —
-  // loading it as a real ES module via jsDelivr's ESM endpoint instead.
-  import('https://cdn.jsdelivr.net/npm/@solana/spl-token@0.4.9/+esm').then((splToken) => {
+    // @solana/spl-token only ships CJS/ESM builds, no browser <script> bundle —
+    // loading it as a real ES module via jsDelivr's ESM endpoint instead.
+    const splToken = await import('https://cdn.jsdelivr.net/npm/@solana/spl-token@0.4.9/+esm');
     ({
       TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
       createInitializeMintInstruction, getAssociatedTokenAddressSync,
@@ -353,26 +356,47 @@ try {
     } = splToken);
     MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
     librariesReady = true;
-  }).catch((err) => {
-    console.error('spl-token failed to load:', err);
+    ['launchBtn', 'verifyBtn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = (id === 'launchBtn' && !walletPubkey);
+    });
+    const status = document.getElementById('statusBox');
+    if (status && status.classList.contains('status-error')) setStatus('Fill in the form and connect your wallet. Nothing is signed until you approve it in Phantom.', 'idle');
+    const vStatus = document.getElementById('verifyStatus');
+    if (vStatus) vStatus.style.display = 'none';
+    if (libraryLoadAttempts > 1) showToast('Connected — libraries loaded successfully.', 'info');
+  } catch (err) {
+    console.error('Solana libraries failed to load (attempt ' + libraryLoadAttempts + '):', err);
     handleLibraryLoadFailure();
-  });
-} catch (err) {
-  console.error('Solana libraries failed to load:', err);
-  handleLibraryLoadFailure();
+    if (libraryLoadAttempts === 1) {
+      setTimeout(loadSolanaLibraries, 2500); // one automatic retry for transient blips
+    }
+  }
 }
 function handleLibraryLoadFailure() {
   ['launchBtn', 'verifyBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
   });
-  const msg = 'Could not load the Solana libraries from the CDN (check your internet connection and reload). Wallet, Launch, and Token Lab are unavailable until this loads — Explore, Creators, Narrative, and Docs still work.';
+  const msg = 'Could not load the Solana libraries — likely a weak or dropped connection. ';
   const status = document.getElementById('statusBox');
-  if (status) { status.textContent = msg; status.className = 'status status-error'; }
+  if (status) {
+    status.innerHTML = '';
+    status.textContent = msg;
+    status.className = 'status status-error';
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = 'Retry';
+    retryBtn.className = 'btn-outline';
+    retryBtn.style.cssText = 'margin-top:10px;padding:8px 14px;font-size:13px;';
+    retryBtn.onclick = () => loadSolanaLibraries();
+    status.appendChild(retryBtn);
+  }
   const vStatus = document.getElementById('verifyStatus');
-  if (vStatus) { vStatus.style.display = 'block'; vStatus.className = 'status status-error'; vStatus.textContent = msg; }
-  showToast(msg, 'error');
+  if (vStatus) { vStatus.style.display = 'block'; vStatus.className = 'status status-error'; vStatus.textContent = msg + 'Retry from the Launch tab.'; }
+  showToast(msg + 'Retrying automatically…', 'error');
 }
+const networkSelectEl = document.getElementById('networkSelect');
+loadSolanaLibraries();
 
 // ---------- local launch storage ----------
 function loadLaunches() {
