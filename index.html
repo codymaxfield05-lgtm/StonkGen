@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@solana/spl-token@0.4.9/lib/index.iife.min.js"></script>
 <style>
   :root{
     --ink:#050805; --panel:#0B0F0B; --panel2:#0F150F; --border:#1B231B;
@@ -337,32 +336,42 @@ let TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
     createSetAuthorityInstruction, AuthorityType, MEMO_PROGRAM_ID;
 
 try {
-  if (typeof solanaWeb3 === 'undefined' || typeof splToken === 'undefined') {
-    throw new Error('Solana libraries did not load from the CDN.');
+  if (typeof solanaWeb3 === 'undefined') {
+    throw new Error('web3.js did not load from the CDN.');
   }
   ({ Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl } = solanaWeb3);
-  ({
-    TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
-    createInitializeMintInstruction, getAssociatedTokenAddressSync,
-    createAssociatedTokenAccountInstruction, createMintToInstruction,
-    createSetAuthorityInstruction, AuthorityType
-  } = splToken);
-  MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
   connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
-  librariesReady = true;
+
+  // @solana/spl-token only ships CJS/ESM builds, no browser <script> bundle —
+  // loading it as a real ES module via jsDelivr's ESM endpoint instead.
+  import('https://cdn.jsdelivr.net/npm/@solana/spl-token@0.4.9/+esm').then((splToken) => {
+    ({
+      TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
+      createInitializeMintInstruction, getAssociatedTokenAddressSync,
+      createAssociatedTokenAccountInstruction, createMintToInstruction,
+      createSetAuthorityInstruction, AuthorityType
+    } = splToken);
+    MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+    librariesReady = true;
+  }).catch((err) => {
+    console.error('spl-token failed to load:', err);
+    handleLibraryLoadFailure();
+  });
 } catch (err) {
   console.error('Solana libraries failed to load:', err);
-  document.addEventListener('DOMContentLoaded', () => {
-    ['launchBtn', 'verifyBtn'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.disabled = true;
-    });
-    const msg = 'Could not load the Solana libraries from the CDN (check your internet connection and reload). Wallet, Launch, and Token Lab are unavailable until this loads — Explore, Creators, Narrative, and Docs still work.';
-    const status = document.getElementById('statusBox');
-    if (status) { status.textContent = msg; status.className = 'status status-error'; }
-    const vStatus = document.getElementById('verifyStatus');
-    if (vStatus) { vStatus.style.display = 'block'; vStatus.className = 'status status-error'; vStatus.textContent = msg; }
+  handleLibraryLoadFailure();
+}
+function handleLibraryLoadFailure() {
+  ['launchBtn', 'verifyBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
   });
+  const msg = 'Could not load the Solana libraries from the CDN (check your internet connection and reload). Wallet, Launch, and Token Lab are unavailable until this loads — Explore, Creators, Narrative, and Docs still work.';
+  const status = document.getElementById('statusBox');
+  if (status) { status.textContent = msg; status.className = 'status status-error'; }
+  const vStatus = document.getElementById('verifyStatus');
+  if (vStatus) { vStatus.style.display = 'block'; vStatus.className = 'status status-error'; vStatus.textContent = msg; }
+  showToast(msg, 'error');
 }
 
 // ---------- local launch storage ----------
