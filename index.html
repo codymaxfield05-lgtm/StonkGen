@@ -328,15 +328,87 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ---------- Solana libraries: guarded, retryable, so a failed CDN load degrades gracefully ----------
+// ---------- Solana libraries: web3.js only — no second CDN dependency to fail ----------
 let Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl;
-let TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
-    createInitializeMintInstruction, getAssociatedTokenAddressSync,
-    createAssociatedTokenAccountInstruction, createMintToInstruction,
-    createSetAuthorityInstruction, AuthorityType, MEMO_PROGRAM_ID;
+let TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, MEMO_PROGRAM_ID;
+const MINT_SIZE = 82; // fixed size of an SPL Token mint account
+const AuthorityType = { MintTokens: 0, FreezeAccount: 1 };
 let libraryLoadAttempts = 0;
 
-async function loadSolanaLibraries() {
+// ---- hand-built SPL Token instruction encoding (avoids depending on @solana/spl-token,
+// which has no browser bundle and was failing to load via jsDelivr's ESM endpoint) ----
+function u8(n) { return new Uint8Array([n]); }
+function concatBytes(...arrays) {
+  const total = arrays.reduce((sum, a) => sum + a.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const a of arrays) { out.set(a, offset); offset += a.length; }
+  return out;
+}
+function u64LE(value) {
+  const out = new Uint8Array(8);
+  let v = BigInt(value);
+  for (let i = 0; i < 8; i++) { out[i] = Number(v & 0xffn); v >>= 8n; }
+  return out;
+}
+function getAssociatedTokenAddress(mint, owner) {
+  const [address] = PublicKey.findProgramAddressSync(
+    [owner.toBytes(), TOKEN_PROGRAM_ID.toBytes(), mint.toBytes()],
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+  return address;
+}
+function createInitializeMint2Instruction(mint, decimals, mintAuthority, freezeAuthority) {
+  const data = concatBytes(
+    u8(20), u8(decimals), mintAuthority.toBytes(),
+    u8(freezeAuthority ? 1 : 0),
+    freezeAuthority ? freezeAuthority.toBytes() : new Uint8Array(32)
+  );
+  return new solanaWeb3.TransactionInstruction({
+    keys: [{ pubkey: mint, isSigner: false, isWritable: true }],
+    programId: TOKEN_PROGRAM_ID, data,
+  });
+}
+function createAssociatedTokenAccountInstruction(payer, ata, owner, mint) {
+  return new solanaWeb3.TransactionInstruction({
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: ata, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    data: new Uint8Array(0),
+  });
+}
+function createMintToInstruction(mint, destination, authority, amount) {
+  const data = concatBytes(u8(7), u64LE(amount));
+  return new solanaWeb3.TransactionInstruction({
+    keys: [
+      { pubkey: mint, isSigner: false, isWritable: true },
+      { pubkey: destination, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: false },
+    ],
+    programId: TOKEN_PROGRAM_ID, data,
+  });
+}
+function createSetAuthorityInstruction(mint, currentAuthority, authorityType, newAuthority) {
+  const data = concatBytes(
+    u8(6), u8(authorityType), u8(newAuthority ? 1 : 0),
+    newAuthority ? newAuthority.toBytes() : new Uint8Array(32)
+  );
+  return new solanaWeb3.TransactionInstruction({
+    keys: [
+      { pubkey: mint, isSigner: false, isWritable: true },
+      { pubkey: currentAuthority, isSigner: true, isWritable: false },
+    ],
+    programId: TOKEN_PROGRAM_ID, data,
+  });
+}
+
+function loadSolanaLibraries() {
   libraryLoadAttempts++;
   try {
     if (typeof solanaWeb3 === 'undefined') {
@@ -344,16 +416,8 @@ async function loadSolanaLibraries() {
     }
     ({ Connection, PublicKey, Keypair, SystemProgram, Transaction, clusterApiUrl } = solanaWeb3);
     connection = new Connection(clusterApiUrl(networkSelectEl.value), 'confirmed');
-
-    // @solana/spl-token only ships CJS/ESM builds, no browser <script> bundle —
-    // loading it as a real ES module via jsDelivr's ESM endpoint instead.
-    const splToken = await import('https://cdn.jsdelivr.net/npm/@solana/spl-token@0.4.9/+esm');
-    ({
-      TOKEN_PROGRAM_ID, MINT_SIZE, getMinimumBalanceForRentExemptMint,
-      createInitializeMintInstruction, getAssociatedTokenAddressSync,
-      createAssociatedTokenAccountInstruction, createMintToInstruction,
-      createSetAuthorityInstruction, AuthorityType
-    } = splToken);
+    TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
     MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
     librariesReady = true;
     ['launchBtn', 'verifyBtn'].forEach(id => {
@@ -364,12 +428,12 @@ async function loadSolanaLibraries() {
     if (status && status.classList.contains('status-error')) setStatus('Fill in the form and connect your wallet. Nothing is signed until you approve it in Phantom.', 'idle');
     const vStatus = document.getElementById('verifyStatus');
     if (vStatus) vStatus.style.display = 'none';
-    if (libraryLoadAttempts > 1) showToast('Connected — libraries loaded successfully.', 'info');
+    if (libraryLoadAttempts > 1) showToast('Connected — ready to go.', 'info');
   } catch (err) {
     console.error('Solana libraries failed to load (attempt ' + libraryLoadAttempts + '):', err);
     handleLibraryLoadFailure();
     if (libraryLoadAttempts === 1) {
-      setTimeout(loadSolanaLibraries, 2500); // one automatic retry for transient blips
+      setTimeout(loadSolanaLibraries, 2500);
     }
   }
 }
@@ -378,7 +442,7 @@ function handleLibraryLoadFailure() {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
   });
-  const msg = 'Could not load the Solana libraries — likely a weak or dropped connection. ';
+  const msg = 'Could not load web3.js from the CDN — likely a weak or dropped connection. ';
   const status = document.getElementById('statusBox');
   if (status) {
     status.innerHTML = '';
@@ -634,8 +698,8 @@ async function launchToken() {
 
   try {
     const mintKeypair = Keypair.generate();
-    const lamports = await getMinimumBalanceForRentExemptMint(connection);
-    const ata = getAssociatedTokenAddressSync(mintKeypair.publicKey, walletPubkey);
+    const lamports = await connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+    const ata = getAssociatedTokenAddress(mintKeypair.publicKey, walletPubkey);
     const supplyBaseUnits = supplyWhole * (10n ** BigInt(decimals));
 
     const lockRecord = {
@@ -662,7 +726,7 @@ async function launchToken() {
         fromPubkey: walletPubkey, newAccountPubkey: mintKeypair.publicKey,
         space: MINT_SIZE, lamports, programId: TOKEN_PROGRAM_ID,
       }),
-      createInitializeMintInstruction(mintKeypair.publicKey, decimals, walletPubkey, walletPubkey, TOKEN_PROGRAM_ID),
+      createInitializeMint2Instruction(mintKeypair.publicKey, decimals, walletPubkey, walletPubkey),
       createAssociatedTokenAccountInstruction(walletPubkey, ata, walletPubkey, mintKeypair.publicKey),
       createMintToInstruction(mintKeypair.publicKey, ata, walletPubkey, supplyBaseUnits),
       createSetAuthorityInstruction(mintKeypair.publicKey, walletPubkey, AuthorityType.MintTokens, null),
